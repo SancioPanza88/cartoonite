@@ -1,4 +1,4 @@
-package com.cartoonite.app;
+﻿package com.cartoonite.app;
 
 import android.annotation.SuppressLint;
 import android.os.Bundle;
@@ -21,7 +21,7 @@ import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.hls.HlsMediaSource;
 import androidx.media3.exoplayer.source.MediaSource;
 import androidx.media3.exoplayer.source.ProgressiveMediaSource;
-import androidx.media3.ui.StyledPlayerView;
+import androidx.media3.ui.PlayerView;
 
 import com.cartoonite.app.api.StreamExtractor;
 
@@ -64,7 +64,7 @@ public class PlayerActivity extends AppCompatActivity {
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler handler = new Handler(Looper.getMainLooper());
 
-    private StyledPlayerView playerView;
+    private PlayerView playerView;
     private WebView webView;
     private ProgressBar progress;
     private ExoPlayer exoPlayer;
@@ -110,7 +110,7 @@ public class PlayerActivity extends AppCompatActivity {
         });
     }
 
-    // ─────────────────────── ExoPlayer (nativo) ───────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ ExoPlayer (nativo) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private void startNativePlayback(StreamExtractor.Result result) {
         Map<String, String> headers = new HashMap<>();
@@ -157,7 +157,7 @@ public class PlayerActivity extends AppCompatActivity {
         playerView.setVisibility(View.GONE);
     }
 
-    // ─────────────────────── WebView (embed + autoplay) ───────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ WebView (embed + autoplay) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     @SuppressLint("SetJavaScriptEnabled")
     private void setupWebView() {
@@ -224,7 +224,7 @@ public class PlayerActivity extends AppCompatActivity {
         webView.loadUrl(embedUrl);
     }
 
-    // ─────────────────────── lifecycle ───────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ lifecycle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     @Override
     public boolean onSupportNavigateUp() {
@@ -258,3 +258,4 @@ public class PlayerActivity extends AppCompatActivity {
         super.onDestroy();
     }
 }
+
