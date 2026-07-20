@@ -19,7 +19,7 @@ import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
 
-    private final List<String> categoryKeys = new ArrayList<>(ToonItaliaClient.CATEGORIES.keySet());
+    private final List<String> categoryKeys = new ArrayList<>(ToonItaliaClient.CATEGORY_IDS.keySet());
     private CategoryPagerAdapter pagerAdapter;
 
     @Override
