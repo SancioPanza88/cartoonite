@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Cartoonite</string>
+    <string name="search_hint">Cerca titoli…</string>
+    <string name="error_loading">Errore di caricamento. Tocca per riprovare.</string>
+    <string name="error_player">Impossibile caricare il player.</string>
+    <string name="no_links">Nessun link disponibile</string>
+</resources>
