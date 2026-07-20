@@ -52,8 +52,12 @@ public class PlayerActivity extends AppCompatActivity {
             finish();
             return;
         }
+
+        androidx.appcompat.widget.Toolbar toolbar = findViewById(R.id.playerToolbar);
+        setSupportActionBar(toolbar);
         if (getSupportActionBar() != null) {
             getSupportActionBar().setTitle(name != null ? name : "Player");
+            getSupportActionBar().setDisplayHomeAsUpEnabled(true);
         }
 
         webView = findViewById(R.id.webView);
@@ -93,20 +97,9 @@ public class PlayerActivity extends AppCompatActivity {
 
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                String reqUrl = request.getUrl().toString();
-                // Blocca popup/redirect pubblicitari verso altri domini
-                if (isAd(reqUrl)) return true;
-                try {
-                    String origHost = new java.net.URL(url).getHost();
-                    String newHost = new java.net.URL(reqUrl).getHost();
-                    if (origHost != null && newHost != null
-                            && !newHost.equalsIgnoreCase(origHost)
-                            && !request.isForMainFrame()) {
-                        return true; // iframe popup
-                    }
-                } catch (Exception ignored) {
-                }
-                return false;
+                // Blocca solo domini pubblicitari noti. NON bloccare iframe
+                // cross-domain: i player caricano video da CDN esterni legittimi.
+                return isAd(request.getUrl().toString());
             }
 
             @Override
@@ -130,6 +123,12 @@ public class PlayerActivity extends AppCompatActivity {
         });
 
         webView.loadUrl(url);
+    }
+
+    @Override
+    public boolean onSupportNavigateUp() {
+        finish();
+        return true;
     }
 
     @Override

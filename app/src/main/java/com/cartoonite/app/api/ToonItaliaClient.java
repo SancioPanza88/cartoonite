@@ -6,6 +6,8 @@ import com.cartoonite.app.model.Models.Season;
 import com.cartoonite.app.model.Models.Title;
 import com.cartoonite.app.model.Models.TitleDetail;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -15,7 +17,6 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -28,19 +29,25 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Client che scarica e parsa toonitalia.xyz in tempo reale.
- * Nessun dato viene salvato in JSON: il sito E' il database.
- * Le pagine vengono cacheate su disco per qualche ora.
+ * Client live per toonitalia.xyz.
+ *
+ * Catalogo: API WordPress (/wp-json) -> titoli + copertine, leggero e veloce.
+ * Dettaglio: parsing della pagina HTML (Jsoup) -> metadati, stagioni, episodi, player.
+ * Copertine mancanti: recupero lazy dal contenuto del post.
+ *
+ * Nessun file JSON intermedio: il sito E' il database.
  */
 public class ToonItaliaClient {
 
     public static final String BASE_URL = "https://toonitalia.xyz";
+    private static final String API = BASE_URL + "/wp-json/wp/v2";
 
-    public static final LinkedHashMap<String, String> CATEGORIES = new LinkedHashMap<String, String>() {{
-        put("anime_ita", "/anime-ita/");
-        put("anime_sub_ita", "/contatti/");
-        put("film_animazione", "/film-animazione/");
-        put("serie_tv", "/serie-tv/");
+    /** Le 4 sezioni del sito -> id categoria WordPress (verificati). */
+    public static final LinkedHashMap<String, Integer> CATEGORY_IDS = new LinkedHashMap<String, Integer>() {{
+        put("anime_ita", 13);        // Anime > ITA (1356)
+        put("anime_sub_ita", 14);    // Anime > Sub-Ita (401)
+        put("film_animazione", 7);   // Film Animazione (808)
+        put("serie_tv", 6);          // Serie Tv (465)
     }};
 
     public static final LinkedHashMap<String, String> CATEGORY_LABELS = new LinkedHashMap<String, String>() {{
@@ -77,117 +84,234 @@ public class ToonItaliaClient {
     private static final Pattern ANCHOR = Pattern.compile(
             "<a\\s+name=\"(S[\\w]+)\"[^>]*>\\s*</a>", Pattern.CASE_INSENSITIVE);
 
+    private static final Pattern IMG_SRC = Pattern.compile(
+            "<img[^>]+src=\"([^\"]+)\"", Pattern.CASE_INSENSITIVE);
+
     private static File cacheDir;
-    private static final long CACHE_TTL_MS = 6L * 60 * 60 * 1000; // 6 ore
+    private static final long PAGE_CACHE_TTL_MS = 6L * 60 * 60 * 1000; // 6 ore
+
+    // ── cache copertine (permanente) ──
+    private static final Map<String, String> coverCache = new HashMap<>();
+    private static boolean coverCacheLoaded = false;
 
     public static void setCacheDir(File dir) {
         cacheDir = dir;
+        if (cacheDir != null) cacheDir.mkdirs();
     }
 
-    // ────────────────────────────── rete ──────────────────────────────
+    // ────────────────────────────── rete / cache ──────────────────────────────
 
-    private static String fetch(String url) throws IOException {
-        String cached = readCache(url);
-        if (cached != null) return cached;
-
-        String html = Jsoup.connect(url)
+    private static String httpGet(String url) throws IOException {
+        return Jsoup.connect(url)
                 .userAgent(UA)
                 .timeout(30000)
                 .maxBodySize(0)
-                .get()
-                .outerHtml();
-        writeCache(url, html);
+                .ignoreContentType(true)
+                .execute()
+                .body();
+    }
+
+    private static String fetchPage(String url) throws IOException {
+        String cached = readPageCache(url);
+        if (cached != null) return cached;
+        String html = httpGet(url);
+        writePageCache(url, html);
         return html;
     }
 
-    private static String cacheKey(String url) {
-        try {
-            MessageDigest md = MessageDigest.getInstance("MD5");
-            byte[] d = md.digest(url.getBytes(StandardCharsets.UTF_8));
-            StringBuilder sb = new StringBuilder();
-            for (byte b : d) sb.append(String.format("%02x", b));
-            return sb.toString();
-        } catch (Exception e) {
-            return String.valueOf(url.hashCode());
-        }
+    private static String pageCacheFile(String url) {
+        return String.valueOf(url.hashCode()) + ".html";
     }
 
-    private static String readCache(String url) {
+    private static String readPageCache(String url) {
         if (cacheDir == null) return null;
         try {
-            File f = new File(cacheDir, cacheKey(url) + ".html");
+            File f = new File(cacheDir, pageCacheFile(url));
             if (!f.exists()) return null;
-            if (System.currentTimeMillis() - f.lastModified() > CACHE_TTL_MS) return null;
+            if (System.currentTimeMillis() - f.lastModified() > PAGE_CACHE_TTL_MS) return null;
             return new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8);
         } catch (Exception e) {
             return null;
         }
     }
 
-    private static void writeCache(String url, String html) {
+    private static void writePageCache(String url, String html) {
         if (cacheDir == null) return;
         try {
-            File f = new File(cacheDir, cacheKey(url) + ".html");
-            Files.write(f.toPath(), html.getBytes(StandardCharsets.UTF_8));
+            Files.write(new File(cacheDir, pageCacheFile(url)).toPath(),
+                    html.getBytes(StandardCharsets.UTF_8));
+        } catch (Exception ignored) {
+        }
+    }
+
+    private static synchronized void loadCoverCache() {
+        if (coverCacheLoaded || cacheDir == null) return;
+        coverCacheLoaded = true;
+        try {
+            File f = new File(cacheDir, "covers.json");
+            if (!f.exists()) return;
+            JSONObject o = new JSONObject(new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8));
+            for (java.util.Iterator<String> it = o.keys(); it.hasNext(); ) {
+                String k = it.next();
+                coverCache.put(k, o.getString(k));
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    private static synchronized void saveCoverCache() {
+        if (cacheDir == null) return;
+        try {
+            JSONObject o = new JSONObject();
+            for (Map.Entry<String, String> e : coverCache.entrySet()) o.put(e.getKey(), e.getValue());
+            Files.write(new File(cacheDir, "covers.json").toPath(),
+                    o.toString().getBytes(StandardCharsets.UTF_8));
         } catch (Exception ignored) {
         }
     }
 
     // ────────────────────────────── catalogo ──────────────────────────────
 
-    /** Scarica la lista titoli di una categoria (id, titolo, url). */
+    /**
+     * Scarica titoli di una sezione dalla API WP (ordinati alfabeticamente),
+     * con copertina quando Yoast la espone (~70%). Le mancanti si recuperano
+     * dopo con {@link #loadMissingCovers}.
+     */
     public static List<Title> getCategoryTitles(String categoryKey) throws IOException {
-        String path = CATEGORIES.get(categoryKey);
-        if (path == null) throw new IOException("Categoria sconosciuta: " + categoryKey);
-
-        Document doc = Jsoup.parse(fetch(BASE_URL + path), BASE_URL);
-        Element content = doc.selectFirst("div.entry-content");
-        if (content == null) content = doc.selectFirst("article");
-        if (content == null) content = doc.body();
-
-        Set<String> skip = new HashSet<>(Arrays.asList(
-                "/anime-ita/", "/contatti/", "/film-animazione/", "/serie-tv/",
-                "/toonitalia-sito-ufficiale/", "/author/", "/category/", "/tag/"));
+        Integer catId = CATEGORY_IDS.get(categoryKey);
+        if (catId == null) throw new IOException("Categoria sconosciuta: " + categoryKey);
+        loadCoverCache();
 
         List<Title> titles = new ArrayList<>();
-        Set<String> seen = new HashSet<>();
+        int page = 1;
+        while (true) {
+            String url = API + "/posts?categories=" + catId
+                    + "&per_page=100&page=" + page
+                    + "&orderby=title&order=asc"
+                    + "&_fields=link,title,yoast_head_json.og_image";
+            JSONArray arr;
+            try {
+                arr = new JSONArray(httpGet(url));
+            } catch (Exception e) {
+                // WP risponde 400 quando la pagina non esiste: fine lista
+                break;
+            }
+            if (arr.length() == 0) break;
 
-        for (Element a : content.select("a[href]")) {
-            String href = a.attr("href").trim();
-            String text = a.text().trim();
-            if (text.isEmpty() || !href.startsWith(BASE_URL + "/")) continue;
-            if (href.contains("#")) continue;
-            boolean skipPath = false;
-            for (String p : skip) if (href.contains(p)) { skipPath = true; break; }
-            if (skipPath) continue;
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject p = arr.optJSONObject(i);
+                if (p == null) continue;
+                String link = p.optString("link", "");
+                String slug = extractSlug(link);
+                if (slug.isEmpty()) continue;
 
-            String slug = href.substring((BASE_URL + "/").length());
-            slug = slug.replaceAll("/+$", "");
-            if (slug.isEmpty() || slug.contains("/")) continue;
-            if (!seen.add(slug)) continue;
+                String name = decodeHtml(p.optJSONObject("title") != null
+                        ? p.optJSONObject("title").optString("rendered", "") : slug);
 
-            if (!href.endsWith("/")) href += "/";
-            titles.add(new Title(slug, text, href, categoryKey));
+                String img = null;
+                Object ogObj = p.opt("yoast_head_json");
+                if (ogObj instanceof JSONObject) {
+                    JSONArray og = ((JSONObject) ogObj).optJSONArray("og_image");
+                    if (og != null && og.length() > 0) {
+                        img = og.optJSONObject(0) != null ? og.optJSONObject(0).optString("url", null) : null;
+                    }
+                }
+                if (img == null) img = coverCache.get(slug);
+                if (img != null) img = img.replace("http://", "https://");
+
+                Title t = new Title(slug, name, link.replace("http://", "https://"), categoryKey);
+                t.imageUrl = img;
+                titles.add(t);
+            }
+            if (arr.length() < 100) break;
+            page++;
+            if (page > 60) break; // sicurezza
         }
         return titles;
+    }
+
+    /**
+     * Recupera le copertine mancanti dal contenuto dei post (batch da 10).
+     * Riempe coverCache e ritorna la mappa slug->url aggiornata per gli slug richiesti.
+     */
+    public static Map<String, String> loadMissingCovers(List<String> slugs) throws IOException {
+        loadCoverCache();
+        Map<String, String> result = new HashMap<>();
+        List<String> toFetch = new ArrayList<>();
+        for (String s : slugs) {
+            if (coverCache.containsKey(s)) result.put(s, coverCache.get(s));
+            else toFetch.add(s);
+        }
+
+        for (int i = 0; i < toFetch.size(); i += 10) {
+            List<String> batch = toFetch.subList(i, Math.min(i + 10, toFetch.size()));
+            StringBuilder sb = new StringBuilder(API + "/posts?_fields=link,content&per_page=10&slug=");
+            for (int j = 0; j < batch.size(); j++) {
+                if (j > 0) sb.append(',');
+                sb.append(batch.get(j));
+            }
+            try {
+                JSONArray arr = new JSONArray(httpGet(sb.toString()));
+                for (int k = 0; k < arr.length(); k++) {
+                    JSONObject p = arr.optJSONObject(k);
+                    if (p == null) continue;
+                    String slug = extractSlug(p.optString("link", ""));
+                    String content = p.optJSONObject("content") != null
+                            ? p.optJSONObject("content").optString("rendered", "") : "";
+                    String img = null;
+                    Matcher m = IMG_SRC.matcher(content);
+                    if (m.find()) img = m.group(1).replace("http://", "https://");
+                    if (!slug.isEmpty()) {
+                        coverCache.put(slug, img != null ? img : "");
+                        if (img != null) result.put(slug, img);
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        // marca anche i non trovati per non ri-chiederli
+        for (String s : toFetch) {
+            if (!coverCache.containsKey(s)) coverCache.put(s, "");
+        }
+        saveCoverCache();
+        return result;
+    }
+
+    private static String extractSlug(String link) {
+        String s = link.replaceFirst("^https?://toonitalia\\.xyz/", "");
+        s = s.replaceAll("/+$", "");
+        return s.contains("/") ? "" : s;
+    }
+
+    private static String decodeHtml(String s) {
+        return Jsoup.parse(s).text();
     }
 
     // ────────────────────────────── dettaglio ──────────────────────────────
 
     public static TitleDetail getDetail(Title t) throws IOException {
-        Document doc = Jsoup.parse(fetch(t.url), t.url);
+        Document doc = Jsoup.parse(fetchPage(t.url), t.url);
 
         TitleDetail d = new TitleDetail();
         d.id = t.id;
         d.title = t.title;
         d.url = t.url;
         d.category = t.category;
+        d.image = t.imageUrl;
 
-        Element og = doc.selectFirst("meta[property=og:image]");
-        if (og != null) d.image = og.attr("content");
+        if (d.image == null || d.image.isEmpty()) {
+            Element og = doc.selectFirst("meta[property=og:image]");
+            if (og != null) d.image = og.attr("content").replace("http://", "https://");
+        }
         if (d.image == null || d.image.isEmpty()) {
             Element img = doc.selectFirst("div.entry-content img, article img");
-            if (img != null) d.image = img.absUrl("src");
+            if (img != null) d.image = img.absUrl("src").replace("http://", "https://");
+        }
+        // salva in cache copertine per la griglia
+        if (d.image != null && !d.image.isEmpty()) {
+            loadCoverCache();
+            coverCache.put(d.id, d.image);
+            saveCoverCache();
         }
 
         Element content = doc.selectFirst("div.entry-content");
@@ -210,7 +334,6 @@ public class ToonItaliaClient {
             d.year = last;
         }
 
-        // Trama
         Matcher tm = Pattern.compile(
                 "Trama:\\s*([\\s\\S]+?)(?:\\s*Scegli Stagione:|\\s*Fonte:|\\s*Sigla|\\s*Sigle|\\s*\\d{3}\\s*[–—]|$)",
                 Pattern.CASE_INSENSITIVE).matcher(text);
@@ -224,7 +347,6 @@ public class ToonItaliaClient {
             if (ogd != null) d.description = ogd.attr("content");
         }
 
-        // ── stagioni ed episodi ──
         d.seasons = splitByAnchors(content, html);
         if (d.seasons.isEmpty()) d.seasons = splitByHeaders(content);
         if (d.seasons.isEmpty()) {
@@ -236,7 +358,6 @@ public class ToonItaliaClient {
             }
         }
         if (d.seasons.isEmpty()) {
-            // film / contenuto singolo
             List<Player> players = new ArrayList<>();
             Set<String> seenUrls = new HashSet<>();
             for (Element a : content.select("a[href]")) {
@@ -289,12 +410,10 @@ public class ToonItaliaClient {
         return isStreamingUrl(url);
     }
 
-    /** Strategia A: split sulle ancore <a name="Sxx"> (pagine con "Scegli Stagione"). */
     private static List<Season> splitByAnchors(Element content, String html) {
         Matcher m = ANCHOR.matcher(html);
         List<int[]> spans = new ArrayList<>();
         List<String> anchors = new ArrayList<>();
-        int lastEnd = -1;
         while (m.find()) {
             anchors.add(m.group(1));
             spans.add(new int[]{m.start(), m.end()});
@@ -327,7 +446,6 @@ public class ToonItaliaClient {
         return seasons;
     }
 
-    /** Strategia B: split su <h2>/<h3> che contengono "stagione". */
     private static List<Season> splitByHeaders(Element content) {
         List<Season> seasons = new ArrayList<>();
         Elements headers = content.select("h2, h3");
@@ -342,7 +460,7 @@ public class ToonItaliaClient {
             StringBuilder block = new StringBuilder();
             Element sib = h.nextElementSibling();
             while (sib != null) {
-                if ((sib.tagName().equals("h2") || sib.tagName().equals("h3"))) {
+                if (sib.tagName().equals("h2") || sib.tagName().equals("h3")) {
                     String st = sib.text().trim().toLowerCase();
                     if (st.contains("stagione") || st.contains("season")
                             || Pattern.matches("^\\d+\\s*[°ª].*", st)) break;
@@ -360,10 +478,6 @@ public class ToonItaliaClient {
         return seasons;
     }
 
-    /**
-     * Parsa righe tipo: {@code 001 – Titolo – <a>PLAYER1</a> – <a>VIDHIDE</a>}
-     * separate da &lt;br&gt; o &lt;p&gt;.
-     */
     private static List<Episode> parseEpisodeLines(String blockHtml) {
         String[] lines = blockHtml.split("(?i)<br\\s*/?>|</p>\\s*|<p[^>]*>|</li>\\s*<li[^>]*>|<li[^>]*>");
 

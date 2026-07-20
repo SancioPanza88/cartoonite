@@ -12,6 +12,7 @@ public class Models {
         public String title;
         public String url;
         public String category;
+        public String imageUrl;
 
         public Title(String id, String title, String url, String category) {
             this.id = id;
