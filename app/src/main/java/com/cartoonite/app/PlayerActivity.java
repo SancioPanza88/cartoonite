@@ -1,4 +1,4 @@
-﻿package com.cartoonite.app;
+package com.cartoonite.app;
 
 import android.annotation.SuppressLint;
 import android.os.Bundle;
