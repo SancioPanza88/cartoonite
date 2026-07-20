@@ -10,8 +10,21 @@ android {
         applicationId "com.cartoonite.app"
         minSdk 24
         targetSdk 34
-        versionCode 1
-        versionName "1.0"
+        versionCode 2
+        versionName "2.0"
+    }
+
+    // Due varianti: mobile (telefono/tablet/Chromebook) e tv (Android TV/Google TV)
+    flavorDimensions "device"
+    productFlavors {
+        mobile {
+            dimension "device"
+            versionNameSuffix ""
+        }
+        tv {
+            dimension "device"
+            versionNameSuffix "-tv"
+        }
     }
 
     buildTypes {
@@ -25,7 +38,7 @@ android {
     }
 }
 
-// I sorgenti contengono caratteri unicode (▶, –, °): forza UTF-8 in compilazione
+// I sorgenti contengono caratteri unicode (▶, –, °, ×): forza UTF-8 in compilazione
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
 }
@@ -38,4 +51,9 @@ dependencies {
     implementation 'androidx.cardview:cardview:1.0.0'
     implementation 'com.squareup.picasso:picasso:2.8'
     implementation 'org.jsoup:jsoup:1.17.2'
+
+    // Player video nativo (riproduzione HLS/mp4)
+    implementation 'androidx.media3:media3-exoplayer:1.4.1'
+    implementation 'androidx.media3:media3-exoplayer-hls:1.4.1'
+    implementation 'androidx.media3:media3-ui:1.4.1'
 }

@@ -46,7 +46,7 @@ public class EpisodesAdapter extends RecyclerView.Adapter<EpisodesAdapter.VH> {
     @Override
     public void onBindViewHolder(@NonNull VH h, int position) {
         Episode ep = items.get(position);
-        h.number.setText(String.valueOf(ep.number));
+        h.number.setText(ep.label != null ? ep.label : String.valueOf(ep.number));
         h.title.setText(ep.title);
 
         h.players.removeAllViews();

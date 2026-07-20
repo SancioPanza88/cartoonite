@@ -27,23 +27,32 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Build APK
-        run: gradle assembleDebug --no-daemon --stacktrace
+      - name: Build APK (mobile + TV)
+        run: gradle assembleMobileDebug assembleTvDebug --no-daemon --stacktrace
 
-      - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk cartoonite.apk
+      - name: Rename APKs
+        run: |
+          cp app/build/outputs/apk/mobile/debug/app-mobile-debug.apk cartoonite.apk
+          cp app/build/outputs/apk/tv/debug/app-tv-debug.apk cartoonite-tv.apk
 
-      - name: Upload APK artifact
+      - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: cartoonite-apk
-          path: cartoonite.apk
+          name: cartoonite-apks
+          path: |
+            cartoonite.apk
+            cartoonite-tv.apk
 
       - name: Create/Update Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
           name: Cartoonite APK
-          body: APK sempre aggiornata all'ultimo commit. Scarica `cartoonite.apk`.
-          files: cartoonite.apk
+          body: |
+            APK sempre aggiornate all'ultimo commit.
+            - `cartoonite.apk` — telefono, tablet e Chromebook
+            - `cartoonite-tv.apk` — Android TV / Google TV
+          files: |
+            cartoonite.apk
+            cartoonite-tv.apk
           make_latest: true

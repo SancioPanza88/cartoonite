@@ -66,18 +66,26 @@ public class ToonItaliaClient {
             "mixdrop.co", "mixdrop.to", "supervideo.tv", "vidoza.net", "upstream.to",
             "streamz.ws", "vidmoly.to", "vidmoly.me", "filemoon.sx", "filemoon.to",
             "voe.sx", "vidhidepro.com", "vidhide.com", "maxstream.video",
-            "dropload.io", "savefiles.co"
+            "dropload.io", "savefiles.co",
+            // rilevati dallo studio sistematico del sito
+            "uprot.net", "dhtpre.com", "peytonepre.com", "smoothpre.com",
+            "rpmplay.xyz", "rpmplay.com"
     ));
 
+    // "PLAYER 1" e "PLAYER1" (con e senza spazio)
     private static final Pattern PLAYER_NAME = Pattern.compile(
-            "^(PLAYER\\d*|VOE|VIDHIDE|MIXDROP|STREAMTAPE|DOOD(STREAM)?|SUPERVIDEO|VIDOZA|" +
+            "^(PLAYER\\s?\\d*|VOE|VIDHIDE|MIXDROP|STREAMTAPE|DOOD(STREAM)?|SUPERVIDEO|VIDOZA|" +
             "UPSTREAM|STREAMZ|VIDMOLY|FILEMOON|UQLOAD|MAXSTREAM|HYDRAX|DROPLOAD|SAVEFILES|" +
             "ALPHA|DELTA|WOLFSTREAM|NINJASTREAM)$", Pattern.CASE_INSENSITIVE);
 
-    private static final Pattern EP_LINE = Pattern.compile("^\\s*(\\d{1,4})\\s*[–—]\\s*(.+)$");
+    // Formato serie: "1x01 – Titolo" oppure "01 – Titolo" oppure "001 – Titolo"
+    private static final Pattern EP_LINE_SXE = Pattern.compile(
+            "^\\s*(\\d{1,2})\\s*[×xX]\\s*(\\d{1,3})\\s*[–—-]\\s*(.+)$");
+    private static final Pattern EP_LINE = Pattern.compile(
+            "^\\s*(\\d{1,4})\\s*[–—]\\s*(.+)$");
 
     private static final Pattern TITLE_CUT = Pattern.compile(
-            "\\s*[–—-]\\s*(PLAYER\\d*|VOE|VIDHIDE|MIXDROP|STREAMTAPE|DOOD|SUPERVIDEO|VIDOZA|" +
+            "\\s*[–—-]\\s*(PLAYER\\s?\\d*|VOE|VIDHIDE|MIXDROP|STREAMTAPE|DOOD|SUPERVIDEO|VIDOZA|" +
             "UPSTREAM|STREAMZ|VIDMOLY|FILEMOON|UQLOAD|MAXSTREAM|DROPLOAD|SAVEFILES|HYDRAX|" +
             "ALPHA|DELTA)\\b.*$", Pattern.CASE_INSENSITIVE);
 
@@ -486,16 +494,32 @@ public class ToonItaliaClient {
             if (!line.contains("<a") && !line.contains("–") && !line.contains("—")) continue;
             Document lineDoc = Jsoup.parse(line);
             String lineText = lineDoc.text().trim();
-            Matcher m = EP_LINE.matcher(lineText);
-            if (!m.find()) continue;
 
+            // Prima formato SxE ("1x01 – Titolo"), poi formato piano ("001 – Titolo")
             int num;
-            try {
-                num = Integer.parseInt(m.group(1));
-            } catch (NumberFormatException e) {
-                continue;
+            String rest;
+            String label = null;
+            Matcher mSxe = EP_LINE_SXE.matcher(lineText);
+            if (mSxe.find()) {
+                try {
+                    int s = Integer.parseInt(mSxe.group(1));
+                    int e = Integer.parseInt(mSxe.group(2));
+                    num = s * 1000 + e; // univoco anche tra stagioni diverse
+                    label = s + "x" + String.format(java.util.Locale.US, "%02d", e);
+                } catch (NumberFormatException e) {
+                    continue;
+                }
+                rest = mSxe.group(3);
+            } else {
+                Matcher m = EP_LINE.matcher(lineText);
+                if (!m.find()) continue;
+                try {
+                    num = Integer.parseInt(m.group(1));
+                } catch (NumberFormatException e) {
+                    continue;
+                }
+                rest = m.group(2);
             }
-            String rest = m.group(2);
 
             List<Player> players = new ArrayList<>();
             Set<String> seenUrls = new HashSet<>();
@@ -511,6 +535,7 @@ public class ToonItaliaClient {
             if (title.isEmpty()) title = "Episodio " + num;
 
             Episode ep = new Episode(num, title);
+            ep.label = label;
             ep.players = players;
             Episode prev = byNum.get(num);
             if (prev == null || ep.players.size() > prev.players.size()) byNum.put(num, ep);

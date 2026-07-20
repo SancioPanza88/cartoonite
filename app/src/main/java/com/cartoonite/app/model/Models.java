@@ -35,6 +35,7 @@ public class Models {
     public static class Episode implements Serializable {
         public int number;
         public String title;
+        public String label; // es. "1x01" per numerazione stagione x episodio
         public List<Player> players = new ArrayList<>();
 
         public Episode(int number, String title) {

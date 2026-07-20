@@ -102,6 +102,14 @@ public class TitlesAdapter extends RecyclerView.Adapter<TitlesAdapter.VH> {
         }
 
         h.itemView.setOnClickListener(v -> listener.onClick(t));
+
+        // Navigazione D-pad (TV): evidenzia la card quando ha il focus
+        h.itemView.setOnFocusChangeListener((v, hasFocus) -> {
+            v.animate().scaleX(hasFocus ? 1.07f : 1.0f)
+                    .scaleY(hasFocus ? 1.07f : 1.0f)
+                    .setDuration(120).start();
+            v.setElevation(hasFocus ? 12f : 0f);
+        });
     }
 
     @Override
